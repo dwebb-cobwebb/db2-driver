@@ -43,13 +43,20 @@ class DB2Blueprint extends Blueprint
      * @param  \Illuminate\Database\Schema\Grammars\Grammar  $grammar
      * @return array
      */
-    public function toSql(Connection $connection, Grammar $grammar)
+    //DWMOD - the function signature of toSql has changed in laravel 12, it no longer accepts the connection and grammar as parameters, so we need to update the function signature and use the class properties instead of the passed arguments
+    // public function toSql(Connection $connection, Grammar $grammar)
+    // {
+    //     $this->addReplyListEntryCommands($connection);
+
+    //     return parent::toSql($connection, $grammar);
+    // }
+    public function toSql()
     {
-        $this->addReplyListEntryCommands($connection);
+        // Use the class properties instead of passed arguments
+        $this->addReplyListEntryCommands($this->connection);
 
-        return parent::toSql($connection, $grammar);
+        return parent::toSql();
     }
-
     /**
      * Add the commands that are necessary to DROP and Rename statements on IBMi.
      *
@@ -93,7 +100,9 @@ class DB2Blueprint extends Blueprint
      * @param  string  $index
      * @return \Illuminate\Support\Fluent
      */
-    protected function indexCommand($type, $columns, $index, $algorithm = null)
+    //DWMOD - the indexCommand method in the parent class has been updated to accept an operatorClass parameter, so we need to update the function signature to match it
+    //protected function indexCommand($type, $columns, $index, $algorithm = null)
+    protected function indexCommand($type, $columns, $index, $algorithm = null, $operatorClass = null)
     {
         $columns = (array) $columns;
 

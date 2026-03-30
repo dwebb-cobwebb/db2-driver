@@ -58,7 +58,9 @@ class DB2SchemaGrammar extends Grammar
      *
      * @return string
      */
-    public function compileTableExists()
+    //DWMOD - function signature has changed in laravel 12
+    //public function compileTableExists()
+    public function compileTableExists($schema, $table)
     {
         return 'select * from information_schema.tables where table_schema = upper(?) and table_name = upper(?)';
     }
@@ -68,7 +70,22 @@ class DB2SchemaGrammar extends Grammar
      *
      * @return string
      */
-    public function compileColumnExists()
+    //DWMOD - function signature has changed in laravel 12
+    //public function compileColumnExists()
+    public function compileColumnExists($schema, $table, $column)
+    {
+        return 'select column_name from information_schema.columns where table_schema = upper(?) and table_name = upper(?) and column_name = upper(?)';
+    }
+
+    //DWMOD - add a compileColumnListing method to get the list of columns for a table, since DB2 does not support the standard information_schema.columns query that Laravel uses by default, and we need to provide our own implementation to get the column listing for a given table
+    /**
+     * Compile the query to determine the list of columns.
+     *
+     * @param  string  $schema
+     * @param  string  $table
+     * @return string
+     */
+    public function compileColumnListing($schema, $table)
     {
         return 'select column_name from information_schema.columns where table_schema = upper(?) and table_name = upper(?)';
     }
@@ -78,10 +95,11 @@ class DB2SchemaGrammar extends Grammar
      *
      * @param  \Illuminate\Database\Schema\Blueprint  $blueprint
      * @param  \Illuminate\Support\Fluent  $command
-     * @param  \Illuminate\Database\Connection  $connection
      * @return string
      */
-    public function compileCreate(Blueprint $blueprint, Fluent $command, Connection $connection)
+    //DWMOD - the function signature of compileCreate has changed in laravel 12, it no longer accepts the connection as a parameter, so we need to update the function signature and use the class property instead of the passed argument
+    //public function compileCreate(Blueprint $blueprint, Fluent $command, Connection $connection)
+    public function compileCreate(Blueprint $blueprint, Fluent $command)
     {
         $columns = implode(', ', $this->getColumns($blueprint));
         $sql = 'create table '.$this->wrapTable($blueprint);
@@ -103,7 +121,9 @@ class DB2SchemaGrammar extends Grammar
      * @param  \Illuminate\Database\Connection  $connection
      * @return string
      */
-    public function compileLabel(Blueprint $blueprint, Fluent $command, Connection $connection)
+    //DWMOD - the function signature of compileLabel has changed in laravel 12, it no longer accepts the connection as a parameter, so we need to update the function signature and use the class property instead of the passed argument
+    //public function compileLabel(Blueprint $blueprint, Fluent $command, Connection $connection)
+    public function compileLabel(Blueprint $blueprint, Fluent $command)
     {
         return 'label on table '.$this->wrapTable($blueprint).' is \''.$command->label.'\'';
     }
@@ -819,29 +839,38 @@ class DB2SchemaGrammar extends Grammar
      * @param  \Illuminate\Database\Connection  $connection
      * @return string
      */
-    public function compileAddReplyListEntry(Blueprint $blueprint, Fluent $command, Connection $connection)
+    //DWMOD - the function signature of compileAddReplyListEntry has changed in laravel 12, it no longer accepts the connection as a parameter, so we need to update the function signature and use the class property instead of the passed argument
+    //public function compileAddReplyListEntry(Blueprint $blueprint, Fluent $command, Connection $connection)
+    public function compileAddReplyListEntry(Blueprint $blueprint, Fluent $command)
     {
-        $sequenceNumberQuery = <<<'EOT'
-            with reply_list_info(sequence_number) as (
-                values(1)
-                union all
-                select sequence_number + 1
-                from reply_list_info
-                where sequence_number + 1 between 2 and 9999
-            )
-            select min(sequence_number) sequence_number
-            from reply_list_info
-            where not exists (
-                select 1
-                from qsys2.reply_list_info rli
-                where rli.sequence_number = reply_list_info.sequence_number
-            )
-EOT;
+//DWMOD - get connection from blueprint instead of from the passed argument, as the function signature has changed in laravel 12 and it no longer accepts the connection as a parameter
+//         $connection = $this->connection;
 
-        $blueprint->setReplyListSequenceNumber($sequenceNumber = $connection->selectOne($sequenceNumberQuery)->sequence_number);
-        $command->command = "ADDRPYLE SEQNBR($sequenceNumber) MSGID(CPA32B2) RPY(''I'')";
+//         $sequenceNumberQuery = <<<'EOT'
+//             with reply_list_info(sequence_number) as (
+//                 values(1)
+//                 union all
+//                 select sequence_number + 1
+//                 from reply_list_info
+//                 where sequence_number + 1 between 2 and 9999
+//             )
+//             select min(sequence_number) sequence_number
+//             from reply_list_info
+//             where not exists (
+//                 select 1
+//                 from qsys2.reply_list_info rli
+//                 where rli.sequence_number = reply_list_info.sequence_number
+//             )
+// EOT;
 
-        return $this->compileExecuteCommand($blueprint, $command);
+//         $blueprint->setReplyListSequenceNumber($sequenceNumber = $connection->selectOne($sequenceNumberQuery)->sequence_number);
+//         $command->command = "ADDRPYLE SEQNBR($sequenceNumber) MSGID(CPA32B2) RPY(''I'')";
+
+//         return $this->compileExecuteCommand($blueprint, $command);
+
+        //DWMOD We are neutralizing this to avoid authority/system-wide collision errors.
+        // This just returns a dummy SQL statement that does nothing.
+        return 'SELECT 1 FROM SYSIBM.SYSDUMMY1';
     }
 
     /**
@@ -853,10 +882,12 @@ EOT;
      */
     public function compileRemoveReplyListEntry(Blueprint $blueprint, Fluent $command)
     {
-        $sequenceNumber = $blueprint->getReplyListSequenceNumber();
-        $command->command = "RMVRPYLE SEQNBR($sequenceNumber)";
+        //DWMOD - bypass the system command execution.
+        // $sequenceNumber = $blueprint->getReplyListSequenceNumber();
+        // $command->command = "RMVRPYLE SEQNBR($sequenceNumber)";
 
-        return $this->compileExecuteCommand($blueprint, $command);
+        // return $this->compileExecuteCommand($blueprint, $command);
+        return 'SELECT 1 FROM SYSIBM.SYSDUMMY1';
     }
 
     /**
@@ -871,5 +902,28 @@ EOT;
         $command->command = 'CHGJOB INQMSGRPY(*SYSRPYL)';
 
         return $this->compileExecuteCommand($blueprint, $command);
+    }
+
+    //DWMOD - add type definitions for tinyInteger and mediumInteger, as they are not supported by DB2 but are supported by Laravel, so we need to map them to smallint and integer respectively
+    /**
+     * Create the column definition for a tiny integer type.
+     *
+     * @param  \Illuminate\Support\Fluent  $column
+     * @return string
+     */
+    protected function typeTinyInteger(\Illuminate\Support\Fluent $column)
+    {
+        return 'smallint';
+    }
+
+    /**
+     * Create the column definition for a medium integer type.
+     *
+     * @param  \Illuminate\Support\Fluent  $column
+     * @return string
+     */
+    protected function typeMediumInteger(\Illuminate\Support\Fluent $column)
+    {
+        return 'integer';
     }
 }

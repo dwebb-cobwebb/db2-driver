@@ -27,6 +27,9 @@ class DB2Connection extends Connection
         ) {
         parent::__construct($pdo, $database, $tablePrefix, $config);
         $this->currentSchema = $this->defaultSchema = strtoupper($config['schema'] ?? null);
+
+        //DWMOD - we need to set the PDO case attribute to lower case to ensure that column names are returned in lower case, which is the default behavior in Laravel, and it prevents issues with column name case sensitivity when working with DB2, which returns column names in upper case by default
+        $this->pdo->setAttribute(\PDO::ATTR_CASE, \PDO::CASE_LOWER);
     }
 
     /**
@@ -78,7 +81,9 @@ class DB2Connection extends Connection
      */
     protected function getDefaultQueryGrammar()
     {
-        $defaultGrammar = new DB2QueryGrammar;
+        //DWMOD - DB2QueryGrammar constructor requires a reference to the connection, so we need to pass $this in the constructor
+        //$defaultGrammar = new DB2QueryGrammar
+        $defaultGrammar = new DB2QueryGrammar($this);
 
         // If a date format was specified in constructor
         if (array_key_exists('date_format', $this->config)) {
@@ -90,7 +95,9 @@ class DB2Connection extends Connection
             $defaultGrammar->setOffsetCompatibilityMode($this->config['offset_compatibility_mode']);
         }
 
-        return $this->withTablePrefix($defaultGrammar);
+        //DWMOD - we are not using table prefixes, and the withTablePrefix method is not implemented in the DB2QueryGrammar class, so we will just return the default grammar without applying a table prefix
+        //return $this->withTablePrefix($defaultGrammar);
+        return $defaultGrammar;
     }
 
     /**
@@ -98,7 +105,9 @@ class DB2Connection extends Connection
      */
     protected function getDefaultSchemaGrammar(): \Illuminate\Database\Grammar
     {
-        return new DB2SchemaGrammar;
+        //DWMOD DB2SchemaGrammar constructor requires a reference to the connection, so we need to pass $this in the constructor
+        //return new DB2SchemaGrammar;
+        return new DB2SchemaGrammar($this);
     }
 
     /**
