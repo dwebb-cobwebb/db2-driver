@@ -238,6 +238,57 @@ class DB2QueryGrammar extends Grammar
     }
 
     /**
+     * Compile an upsert statement into SQL using DB2's MERGE syntax.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  array  $values
+     * @param  array  $uniqueBy
+     * @param  array  $update
+     * @return string
+     */
+    public function compileUpsert(Builder $query, array $values, array $uniqueBy, array $update): string
+    {
+        $table = $this->wrapTable($query->from);
+        $columns = array_keys(reset($values));
+        $wrappedColumns = $this->columnize($columns);
+        $sourceAlias = 'laravel_source';
+
+        $parameters = collect($values)->map(function ($record) {
+            return '('.$this->parameterize($record).')';
+        })->implode(', ');
+
+        $on = collect($uniqueBy)->map(function ($column) use ($table, $sourceAlias) {
+            $wrapped = $this->wrap($column);
+
+            return "{$table}.{$wrapped} = {$sourceAlias}.{$wrapped}";
+        })->implode(' AND ');
+
+        $sql = "MERGE INTO {$table} USING (VALUES {$parameters}) AS {$sourceAlias} ({$wrappedColumns}) ON {$on}";
+
+        if (! empty($update)) {
+            $sets = collect($update)->map(function ($value, $key) use ($table, $sourceAlias) {
+                if (is_numeric($key)) {
+                    $wrapped = $this->wrap($value);
+
+                    return "{$table}.{$wrapped} = {$sourceAlias}.{$wrapped}";
+                }
+
+                return $table.'.'.$this->wrap($key).' = '.$this->parameter($value);
+            })->implode(', ');
+
+            $sql .= " WHEN MATCHED THEN UPDATE SET {$sets}";
+        }
+
+        $insertValues = collect($columns)->map(function ($col) use ($sourceAlias) {
+            return "{$sourceAlias}.{$this->wrap($col)}";
+        })->implode(', ');
+
+        $sql .= " WHEN NOT MATCHED THEN INSERT ({$wrappedColumns}) VALUES ({$insertValues})";
+
+        return $sql;
+    }
+
+    /**
      * Compile the SQL statement to define a savepoint.
      *
      * @param  string  $name
