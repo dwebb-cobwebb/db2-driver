@@ -250,12 +250,18 @@ class DB2QueryGrammar extends Grammar
     {
         $table = $this->wrapTable($query->from);
         $columns = array_keys(reset($values));
-        $wrappedColumns = $this->columnize($columns);
         $sourceAlias = 'laravel_source';
 
-        $parameters = collect($values)->map(function ($record) {
-            return '('.$this->parameterize($record).')';
-        })->implode(', ');
+        // DB2 for i (SQL0584) does not allow parameter markers in MERGE...USING (VALUES (?)).
+        // Work around this by building the source as SELECT ? AS col FROM SYSIBM.SYSDUMMY1,
+        // using UNION ALL for multiple rows — parameter markers are permitted in SELECT lists.
+        $source = collect($values)->map(function ($record) use ($columns) {
+            $selects = collect($columns)->map(function ($col) use ($record) {
+                return $this->parameter($record[$col]).' AS '.$this->wrap($col);
+            })->implode(', ');
+
+            return "SELECT {$selects} FROM SYSIBM.SYSDUMMY1";
+        })->implode(' UNION ALL ');
 
         $on = collect($uniqueBy)->map(function ($column) use ($table, $sourceAlias) {
             $wrapped = $this->wrap($column);
@@ -263,7 +269,7 @@ class DB2QueryGrammar extends Grammar
             return "{$table}.{$wrapped} = {$sourceAlias}.{$wrapped}";
         })->implode(' AND ');
 
-        $sql = "MERGE INTO {$table} USING (VALUES {$parameters}) AS {$sourceAlias} ({$wrappedColumns}) ON {$on}";
+        $sql = "MERGE INTO {$table} USING ({$source}) AS {$sourceAlias} ON {$on}";
 
         if (! empty($update)) {
             $sets = collect($update)->map(function ($value, $key) use ($table, $sourceAlias) {
@@ -279,11 +285,13 @@ class DB2QueryGrammar extends Grammar
             $sql .= " WHEN MATCHED THEN UPDATE SET {$sets}";
         }
 
+        $insertColumns = $this->columnize($columns);
+
         $insertValues = collect($columns)->map(function ($col) use ($sourceAlias) {
             return "{$sourceAlias}.{$this->wrap($col)}";
         })->implode(', ');
 
-        $sql .= " WHEN NOT MATCHED THEN INSERT ({$wrappedColumns}) VALUES ({$insertValues})";
+        $sql .= " WHEN NOT MATCHED THEN INSERT ({$insertColumns}) VALUES ({$insertValues})";
 
         return $sql;
     }
