@@ -246,18 +246,26 @@ class DB2QueryGrammar extends Grammar
      * @param  array  $update
      * @return string
      */
+    /**
+     * Compile an upsert statement into SQL using DB2's MERGE syntax.
+     *
+     * DB2 for i does not permit parameter markers (?) anywhere inside the USING
+     * subquery of a MERGE statement — not even inside CAST(? AS type) — raising
+     * SQL0584 or SQL0418 at SQLPrepare time.  All values are therefore inlined
+     * as properly-escaped SQL literals so that the statement contains no markers
+     * and can be executed with an empty bindings array.
+     *
+     * @see DB2QueryBuilder::upsert() — executes the result with no bindings.
+     */
     public function compileUpsert(Builder $query, array $values, array $uniqueBy, array $update): string
     {
         $table = $this->wrapTable($query->from);
         $columns = array_keys(reset($values));
         $sourceAlias = 'laravel_source';
 
-        // DB2 for i (SQL0584) does not allow parameter markers in MERGE...USING (VALUES (?)).
-        // Work around this by building the source as SELECT ? AS col FROM SYSIBM.SYSDUMMY1,
-        // using UNION ALL for multiple rows — parameter markers are permitted in SELECT lists.
         $source = collect($values)->map(function ($record) use ($columns) {
             $selects = collect($columns)->map(function ($col) use ($record) {
-                return $this->parameter($record[$col]).' AS '.$this->wrap($col);
+                return $this->quoteInlineValue($record[$col]).' AS '.$this->wrap($col);
             })->implode(', ');
 
             return "SELECT {$selects} FROM SYSIBM.SYSDUMMY1";
@@ -279,7 +287,8 @@ class DB2QueryGrammar extends Grammar
                     return "{$table}.{$wrapped} = {$sourceAlias}.{$wrapped}";
                 }
 
-                return $table.'.'.$this->wrap($key).' = '.$this->parameter($value);
+                // Literal override value — inline it too so there are no markers.
+                return $table.'.'.$this->wrap($key).' = '.$this->quoteInlineValue($value);
             })->implode(', ');
 
             $sql .= " WHEN MATCHED THEN UPDATE SET {$sets}";
@@ -294,6 +303,41 @@ class DB2QueryGrammar extends Grammar
         $sql .= " WHEN NOT MATCHED THEN INSERT ({$insertColumns}) VALUES ({$insertValues})";
 
         return $sql;
+    }
+
+    /**
+     * Render a PHP value as an inline SQL literal safe for embedding in a
+     * MERGE...USING subquery on DB2 for i.
+     *
+     * Single-quote escaping (doubling interior apostrophes) is the standard
+     * SQL mechanism and is fully supported by DB2 for i.  Raw Expression
+     * instances are passed through unchanged so callers can still inject
+     * hand-crafted SQL fragments when needed.
+     */
+    protected function quoteInlineValue(mixed $value): string
+    {
+        if ($this->isExpression($value)) {
+            return $this->getValue($value);
+        }
+
+        if (is_null($value)) {
+            return 'NULL';
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return (string) $value;
+        }
+
+        // String: escape any embedded single quotes by doubling them, then wrap.
+        return "'".str_replace("'", "''", (string) $value)."'";
     }
 
     /**

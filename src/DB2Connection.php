@@ -111,6 +111,22 @@ class DB2Connection extends Connection
     }
 
     /**
+     * Get a new query builder instance for the connection.
+     *
+     * Returns DB2QueryBuilder so that upsert() can inline values directly into
+     * the SQL, bypassing PDO parameter binding which DB2 for i forbids inside
+     * MERGE...USING subqueries (SQL0584 / SQL0418).
+     */
+    public function query(): DB2QueryBuilder
+    {
+        return new DB2QueryBuilder(
+            $this,
+            $this->getQueryGrammar(),
+            $this->getPostProcessor()
+        );
+    }
+
+    /**
      * Get the default post processor instance
      */
     protected function getDefaultPostProcessor(): \Illuminate\Database\Query\Processors\Processor
