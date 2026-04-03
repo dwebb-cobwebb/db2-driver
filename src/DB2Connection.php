@@ -111,6 +111,37 @@ class DB2Connection extends Connection
     }
 
     /**
+     * Bind the values to a PDO statement.
+     *
+     * IBM i's System i Access ODBC driver converts every PDO::PARAM_STR value
+     * from the job's CCSID to the column's CCSID.  PHP's serialize() embeds
+     * null bytes (\x00) as property-visibility markers; those bytes are
+     * rejected during EBCDIC conversion (CWBNL0107 / SQLSTATE 22018).
+     *
+     * Binding such strings as PDO::PARAM_LOB uses SQL_C_BINARY on the wire,
+     * which bypasses code-page conversion entirely.  The target column must be
+     * BLOB (or FOR BIT DATA) for DB2 to store the raw bytes — typeMediumText()
+     * in DB2SchemaGrammar returns 'blob' specifically to satisfy this requirement.
+     */
+    public function bindValues($statement, $bindings)
+    {
+        foreach ($bindings as $key => $value) {
+            $pdoParam = is_string($key) ? $key : $key + 1;
+
+            if (is_resource($value)) {
+                $statement->bindValue($pdoParam, $value, PDO::PARAM_LOB);
+            } elseif (is_int($value)) {
+                $statement->bindValue($pdoParam, $value, PDO::PARAM_INT);
+            } elseif (is_string($value) && str_contains($value, "\x00")) {
+                // Null bytes present — bind as binary LOB to bypass EBCDIC conversion.
+                $statement->bindValue($pdoParam, $value, PDO::PARAM_LOB);
+            } else {
+                $statement->bindValue($pdoParam, $value, PDO::PARAM_STR);
+            }
+        }
+    }
+
+    /**
      * Get a new query builder instance for the connection.
      *
      * Returns DB2QueryBuilder so that upsert() can inline values directly into

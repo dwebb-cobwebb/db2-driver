@@ -466,13 +466,6 @@ class DB2SchemaGrammar extends Grammar
      */
     protected function typeText(Fluent $column)
     {
-        // CLOB is a character type and cannot carry CCSID 65535 (binary).
-        // When binary storage is configured, use BLOB instead — it is the
-        // binary-safe equivalent and does not require a character CCSID.
-        if ((int) $this->connection?->getConfig('column_ccsid') === 65535) {
-            return 'blob';
-        }
-
         return "clob(64K){$this->columnCcsid()}";
     }
 
@@ -484,9 +477,12 @@ class DB2SchemaGrammar extends Grammar
      */
     protected function typeMediumText(Fluent $column)
     {
-        $colLength = ($column->length ? $column->length : 16000);
-
-        return "varchar($colLength){$this->columnCcsid()}";
+        // PHP's serialize() embeds null bytes (\x00*\x00name) for protected
+        // property visibility markers. EBCDIC character columns reject null
+        // bytes during ODBC code-page conversion (CWBNL0107 / SQLSTATE 22018).
+        // BLOB stores raw bytes without any CCSID conversion, making it safe
+        // for cache values, session payloads, and any other serialised data.
+        return 'blob';
     }
 
     /**
