@@ -444,7 +444,7 @@ class DB2SchemaGrammar extends Grammar
      */
     protected function typeChar(Fluent $column)
     {
-        return "char({$column->length})";
+        return "char({$column->length}){$this->columnCcsid()}";
     }
 
     /**
@@ -455,7 +455,7 @@ class DB2SchemaGrammar extends Grammar
      */
     protected function typeString(Fluent $column)
     {
-        return "varchar({$column->length})";
+        return "varchar({$column->length}){$this->columnCcsid()}";
     }
 
     /**
@@ -466,7 +466,7 @@ class DB2SchemaGrammar extends Grammar
      */
     protected function typeText(Fluent $column)
     {
-        return 'clob(64K)';
+        return "clob(64K){$this->columnCcsid()}";
     }
 
     /**
@@ -479,7 +479,7 @@ class DB2SchemaGrammar extends Grammar
     {
         $colLength = ($column->length ? $column->length : 16000);
 
-        return "varchar($colLength)";
+        return "varchar($colLength){$this->columnCcsid()}";
     }
 
     /**
@@ -492,7 +492,28 @@ class DB2SchemaGrammar extends Grammar
     {
         $colLength = ($column->length ? $column->length : 16000);
 
-        return "varchar($colLength)";
+        return "varchar($colLength){$this->columnCcsid()}";
+    }
+
+    /**
+     * Return a CCSID clause for character column definitions, e.g. " CCSID 819".
+     *
+     * When the connection config contains a 'column_ccsid' value the clause is
+     * appended to every CHAR, VARCHAR, and CLOB column so that new tables are
+     * created with the correct character set.  Setting this to 819 (ISO-8859-1)
+     * and also adding CCSID=819 to the ODBC connection keywords means that the
+     * source and target CCSIDs always match, the IBM i ODBC driver skips
+     * code-page conversion entirely, and null bytes in PHP-serialised data are
+     * stored and retrieved without error (CWBNL0107 / SQLSTATE 22018).
+     *
+     * When 'column_ccsid' is absent the method returns an empty string, leaving
+     * existing behaviour unchanged.
+     */
+    private function columnCcsid(): string
+    {
+        $ccsid = $this->connection?->getConfig('column_ccsid');
+
+        return $ccsid !== null ? " CCSID {$ccsid}" : '';
     }
 
     /**
