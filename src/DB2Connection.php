@@ -118,10 +118,11 @@ class DB2Connection extends Connection
      * null bytes (\x00) as property-visibility markers; those bytes are
      * rejected during EBCDIC conversion (CWBNL0107 / SQLSTATE 22018).
      *
-     * Binding such strings as PDO::PARAM_LOB uses SQL_C_BINARY on the wire,
-     * which bypasses code-page conversion entirely.  The target column must be
-     * BLOB (or FOR BIT DATA) for DB2 to store the raw bytes — typeMediumText()
-     * in DB2SchemaGrammar returns 'blob' specifically to satisfy this requirement.
+     * Strings that contain null bytes are encoded as a STX byte (\x02) followed
+     * by the hex representation of the original string (bin2hex).  The resulting
+     * string contains only ASCII characters 0-9 and a-f, which survive EBCDIC
+     * conversion unchanged.  DB2Processor::processSelect() detects the \x02
+     * prefix on read and reverses the encoding via hex2bin().
      */
     public function bindValues($statement, $bindings)
     {
@@ -133,8 +134,11 @@ class DB2Connection extends Connection
             } elseif (is_int($value)) {
                 $statement->bindValue($pdoParam, $value, PDO::PARAM_INT);
             } elseif (is_string($value) && str_contains($value, "\x00")) {
-                // Null bytes present — bind as binary LOB to bypass EBCDIC conversion.
-                $statement->bindValue($pdoParam, $value, PDO::PARAM_LOB);
+                // Null bytes present (e.g. PHP serialize() protected-property markers).
+                // Encode as STX-marker + hex so the string contains only printable ASCII
+                // characters that survive EBCDIC conversion without modification.
+                // DB2Processor::processSelect() reverses this on read.
+                $statement->bindValue($pdoParam, "\x02" . bin2hex($value), PDO::PARAM_STR);
             } else {
                 $statement->bindValue($pdoParam, $value, PDO::PARAM_STR);
             }

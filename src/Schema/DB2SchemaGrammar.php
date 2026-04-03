@@ -477,12 +477,9 @@ class DB2SchemaGrammar extends Grammar
      */
     protected function typeMediumText(Fluent $column)
     {
-        // PHP's serialize() embeds null bytes (\x00*\x00name) for protected
-        // property visibility markers. EBCDIC character columns reject null
-        // bytes during ODBC code-page conversion (CWBNL0107 / SQLSTATE 22018).
-        // BLOB stores raw bytes without any CCSID conversion, making it safe
-        // for cache values, session payloads, and any other serialised data.
-        return 'blob';
+        $colLength = ($column->length ? $column->length : 16000);
+
+        return "varchar($colLength){$this->columnCcsid()}";
     }
 
     /**

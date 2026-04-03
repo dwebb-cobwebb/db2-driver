@@ -38,6 +38,39 @@ class DB2Processor extends Processor
     }
 
     /**
+     * Process the results of a "select" query.
+     *
+     * Reverses the STX + hex encoding applied by DB2Connection::bindValues() for
+     * strings that originally contained null bytes (e.g. PHP serialize() output).
+     * Any column value that starts with \x02 followed by an even-length string of
+     * valid hex characters is decoded via hex2bin().  All other values are returned
+     * unchanged.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  array  $results
+     * @return array
+     */
+    public function processSelect(Builder $query, $results)
+    {
+        return array_map(function ($row) {
+            foreach (get_object_vars($row) as $key => $value) {
+                if (
+                    is_string($value)
+                    && isset($value[0])
+                    && $value[0] === "\x02"
+                ) {
+                    $hex = substr($value, 1);
+                    if (strlen($hex) % 2 === 0 && ctype_xdigit($hex)) {
+                        $row->$key = hex2bin($hex);
+                    }
+                }
+            }
+
+            return $row;
+        }, $results);
+    }
+
+    /**
      * Process the results of a column listing query.
      * This was present in Illuminate\Database\Query\Processor.php 9.x but later removed.
      *
