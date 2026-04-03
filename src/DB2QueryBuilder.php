@@ -26,6 +26,46 @@ class DB2QueryBuilder extends Builder
      * @param  array|null  $update
      * @return int
      */
+    /**
+     * Insert new records, ignoring rows that would violate a unique constraint.
+     *
+     * DB2 has no native INSERT OR IGNORE / INSERT IGNORE syntax, and the base
+     * Grammar throws a RuntimeException for compileInsertOrIgnore().  We
+     * implement the semantics by attempting a normal INSERT per row and silently
+     * swallowing unique-constraint violations (SQLSTATE 23505 / SQL0803).
+     *
+     * @param  array  $values
+     * @return int  Number of rows actually inserted.
+     */
+    public function insertOrIgnore(array $values): int
+    {
+        if (empty($values)) {
+            return 0;
+        }
+        if (! is_array(reset($values))) {
+            $values = [$values];
+        } else {
+            foreach ($values as $key => $value) {
+                ksort($value);
+                $values[$key] = $value;
+            }
+        }
+        $this->applyBeforeQueryCallbacks();
+        $affected = 0;
+        foreach ($values as $record) {
+            try {
+                $this->newQuery()->from($this->from)->insert($record);
+                $affected++;
+            } catch (\Illuminate\Database\QueryException $e) {
+                // SQLSTATE 23505 = unique constraint violation (DB2 SQL0803)
+                // SQLSTATE 23000 = integrity constraint violation (general)
+                if (! in_array($e->getCode(), ['23505', '23000'])) {
+                    throw $e;
+                }
+            }
+        }
+        return $affected;
+    }
     public function upsert(array $values, $uniqueBy, $update = null): int
     {
         if (empty($values)) {
