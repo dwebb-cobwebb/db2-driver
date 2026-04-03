@@ -466,6 +466,13 @@ class DB2SchemaGrammar extends Grammar
      */
     protected function typeText(Fluent $column)
     {
+        // CLOB is a character type and cannot carry CCSID 65535 (binary).
+        // When binary storage is configured, use BLOB instead — it is the
+        // binary-safe equivalent and does not require a character CCSID.
+        if ((int) $this->connection?->getConfig('column_ccsid') === 65535) {
+            return 'blob';
+        }
+
         return "clob(64K){$this->columnCcsid()}";
     }
 

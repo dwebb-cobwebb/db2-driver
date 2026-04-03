@@ -112,6 +112,48 @@ class DB2Builder extends Builder
 
 
     /**
+     * Drop all tables from the current schema.
+     *
+     * Referential constraints (foreign keys) are removed first so that FK
+     * dependencies do not block the subsequent DROP TABLE statements.
+     */
+    public function dropAllTables(): void
+    {
+        $schema = strtoupper($this->connection->getDefaultSchema());
+
+        $tables = $this->connection->select(
+            "select table_name from information_schema.tables
+              where table_schema = ? and table_type = 'BASE TABLE'",
+            [$schema]
+        );
+
+        if (empty($tables)) {
+            return;
+        }
+
+        // Drop all foreign-key constraints before dropping tables so that
+        // referential integrity does not prevent the DROP TABLE statements.
+        foreach ($tables as $table) {
+            $constraints = $this->connection->select(
+                "select constraint_name from information_schema.table_constraints
+                  where table_schema = ? and table_name = ? and constraint_type = 'FOREIGN KEY'",
+                [$schema, strtoupper($table->table_name)]
+            );
+
+            foreach ($constraints as $constraint) {
+                $this->connection->statement(
+                    "ALTER TABLE {$schema}.{$table->table_name}
+                     DROP FOREIGN KEY {$constraint->constraint_name}"
+                );
+            }
+        }
+
+        foreach ($tables as $table) {
+            $this->connection->statement("DROP TABLE {$schema}.{$table->table_name}");
+        }
+    }
+
+    /**
      * Execute the blueprint to build / modify the table.
      */
     protected function build(Blueprint $blueprint)
